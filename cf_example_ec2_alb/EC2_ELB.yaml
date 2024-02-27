@@ -1,0 +1,128 @@
+Parameters:
+
+  VpcId:
+    Type: String
+    Description: Default VPC
+    Default: vpc-0ac72ce2f846de2a0
+  
+  subnetA:
+    Type: String
+    Description: subnet a
+    Default: subnet-0aa2122f68ef2b205
+
+  subnetB:
+    Type: String
+    Description: subnet b
+    Default: subnet-0f3077770c99ca85d
+
+
+Resources:
+  NewKeyPair:
+    Type: 'AWS::EC2::KeyPair'
+    Properties: 
+      KeyName: test-key-pair
+  
+  httpSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: allowHttpGroup
+      GroupDescription: allow http
+      VpcId: 
+        Ref: VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: env
+          Value: test
+
+  myEC2Instance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: test-key-pair
+      ImageId: ami-0440d3b780d96b29d
+      InstanceType: t3.micro
+      SecurityGroupIds:
+        - Ref: httpSecGroup
+      UserData: !Base64 |
+        #!/bin/bash	
+        dnf update -y
+        dnf install httpd -y
+        echo "<html><body><h1>Hello Cloud Gurus 1</h1></body></html>" >/var/www/html/index.html
+        systemctl enable httpd
+        systemctl start httpd
+      Tags:
+        - Key: env
+          Value: test
+
+  myEC2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: test-key-pair
+      ImageId: ami-0440d3b780d96b29d
+      InstanceType: t3.micro
+      SecurityGroupIds:
+        - Ref: httpSecGroup
+      UserData: !Base64 |
+        #!/bin/bash	
+        dnf update -y
+        dnf install httpd -y
+        echo "<html><body><h1>Hello Cloud Gurus 2</h1></body></html>" >/var/www/html/index.html
+        systemctl enable httpd
+        systemctl start httpd
+      Tags:
+        - Key: env
+          Value: test
+  
+  EC2TargetGroup:
+      Type: AWS::ElasticLoadBalancingV2::TargetGroup
+      Properties:
+        HealthCheckIntervalSeconds: 30
+        HealthCheckProtocol: HTTP
+        HealthCheckTimeoutSeconds: 15
+        HealthyThresholdCount: 5
+        Matcher:
+          HttpCode: '200'
+        Name: EC2TargetGroup
+        Port: 80
+        Protocol: HTTP
+        TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '20'
+        Targets:
+        - Id: 
+            Ref: myEC2Instance1
+          Port: 80
+        - Id: 
+            Ref: myEC2Instance2
+          Port: 80
+        UnhealthyThresholdCount: 3
+        VpcId: 
+          Ref: VpcId
+        Tags:
+        - Key: Name
+          Value: EC2TargetGroup
+
+  ALBListener:
+      Type: AWS::ElasticLoadBalancingV2::Listener
+      Properties:
+        DefaultActions:
+          - Type: forward
+            TargetGroupArn:
+              Ref: EC2TargetGroup
+        LoadBalancerArn:
+            Ref: ApplicationLoadBalancer
+        Port: 80
+        Protocol: HTTP
+        
+  ApplicationLoadBalancer:
+      Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+      Properties:
+        Scheme: internet-facing # or internal
+        Subnets:
+        - Ref: subnetA
+        - Ref: subnetB
+        SecurityGroups:
+        - Ref: httpSecGroup
